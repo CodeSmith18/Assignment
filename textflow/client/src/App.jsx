@@ -1,61 +1,51 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { AuthProvider, useAuth } from './context/AuthContext.jsx';
+import Landing from './pages/Landing.jsx';
+import Signup from './pages/Signup.jsx';
+import Login from './pages/Login.jsx';
+import Dashboard from './pages/Dashboard.jsx';
 import './styles/index.css';
 
-function App() {
-  const [view, setView] = useState('landing'); // landing, signup, login, dashboard
+function MainApp() {
+  const { user, loading } = useAuth();
+  const [view, setView] = useState('landing');
+
+  // React to authentication status
+  useEffect(() => {
+    if (user) {
+      setView('dashboard');
+    } else if (view === 'dashboard') {
+      setView('landing');
+    }
+  }, [user]);
+
+  if (loading) {
+    return (
+      <div className="app-loading-screen">
+        <div className="spinner-large"></div>
+        <p>Loading TextFlow App...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="app">
-      <header>
-        <h1>TextFlow</h1>
-        <nav>
-          <button onClick={() => setView('landing')}>Home</button>
-          <button onClick={() => setView('signup')}>Sign Up</button>
-          <button onClick={() => setView('login')}>Login</button>
-        </nav>
-      </header>
-      
-      <main>
-        {view === 'landing' && <LandingPage />}
-        {view === 'signup' && <SignupPage />}
-        {view === 'login' && <LoginPage />}
-        {view === 'dashboard' && <DashboardPage />}
+      <main className="app-main-content">
+        {view === 'landing' && <Landing setView={setView} />}
+        {view === 'signup' && <Signup setView={setView} />}
+        {view === 'login' && <Login setView={setView} />}
+        {view === 'dashboard' && <Dashboard />}
       </main>
     </div>
   );
 }
 
-function LandingPage() {
+function App() {
   return (
-    <div className="landing">
-      <h2>AI-Powered Text Processing</h2>
-      <p>Summarize and rewrite text with advanced AI models.</p>
-      <div className="features">
-        <div className="feature">
-          <h3>Free Plan</h3>
-          <p>2,000 characters/month</p>
-          <p>Basic summarize & rewrite</p>
-        </div>
-        <div className="feature">
-          <h3>Pro Plan</h3>
-          <p>50,000 characters/month</p>
-          <p>Tone selector + advanced features</p>
-        </div>
-      </div>
-    </div>
+    <AuthProvider>
+      <MainApp />
+    </AuthProvider>
   );
-}
-
-function SignupPage() {
-  return <div>Signup Page - TODO</div>;
-}
-
-function LoginPage() {
-  return <div>Login Page - TODO</div>;
-}
-
-function DashboardPage() {
-  return <div>Dashboard Page - TODO</div>;
 }
 
 export default App;
