@@ -3,6 +3,7 @@ import session from 'express-session';
 import cors from 'cors';
 import { initDatabase } from './db/init.js';
 import { validateEnv, config } from './config/env.js';
+import authRoutes from './routes/auth.js';
 
 // Validate environment variables on boot
 validateEnv();
@@ -38,8 +39,10 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// TODO: Add route handlers
-// app.use('/api/auth', authRoutes);
+// Route Handlers
+app.use('/api/auth', authRoutes);
+
+// TODO: Add other route handlers
 // app.use('/api/process', textRoutes);
 // app.use('/api/usage', usageRoutes);
 // app.use('/api', billingRoutes);
