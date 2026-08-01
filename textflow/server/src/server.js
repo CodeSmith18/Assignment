@@ -1,24 +1,25 @@
 import express from 'express';
 import session from 'express-session';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import { initDatabase } from './db/init.js';
+import { validateEnv, config } from './config/env.js';
 
-dotenv.config();
+// Validate environment variables on boot
+validateEnv();
 
 const app = express();
-const PORT = process.env.PORT || 4000;
+const PORT = config.port || 4000;
 
 // Middleware
 app.use(cors({
-  origin: process.env.CLIENT_ORIGIN || 'http://localhost:5173',
+  origin: config.clientOrigin || 'http://localhost:5173',
   credentials: true
 }));
 
 app.use(express.json());
 
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'dev-secret-key',
+  secret: config.sessionSecret || 'dev-secret-key',
   resave: false,
   saveUninitialized: false,
   cookie: {
@@ -45,6 +46,6 @@ app.get('/api/health', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`🚀 TextFlow server running on port ${PORT}`);
-  console.log(`📊 Flexprice API: ${process.env.FLEXPRICE_BASE_URL}`);
-  console.log(`🌐 CORS origin: ${process.env.CLIENT_ORIGIN}`);
+  console.log(`📊 Flexprice API: ${config.flexpriceBaseUrl}`);
+  console.log(`🌐 CORS origin: ${config.clientOrigin}`);
 });
