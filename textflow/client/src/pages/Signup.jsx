@@ -76,9 +76,9 @@ export default function Signup({ setView }) {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Minimum 6 characters"
+              placeholder="Minimum 8 characters"
               required
-              minLength="6"
+              minLength="8"
               disabled={loading}
             />
           </div>
