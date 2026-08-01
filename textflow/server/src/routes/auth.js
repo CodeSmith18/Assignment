@@ -167,16 +167,27 @@ router.post('/signup', async (req, res) => {
 
     // 6. Establish Session
     req.session.userId = newUser.id;
-
-    return res.status(201).json({
-      success: true,
-      user: {
-        id: newUser.id,
-        email: newUser.email,
-        external_customer_id: newUser.external_customer_id,
-        plan: newUser.plan,
-        created_at: newUser.created_at
+    req.session.save((err) => {
+      if (err) {
+        console.error('[Signup Session Save Error]:', err);
+        return res.status(500).json({
+          success: false,
+          error: {
+            code: 'SESSION_ERROR',
+            message: 'Failed to establish user session. Please try logging in.'
+          }
+        });
       }
+      return res.status(201).json({
+        success: true,
+        user: {
+          id: newUser.id,
+          email: newUser.email,
+          external_customer_id: newUser.external_customer_id,
+          plan: newUser.plan,
+          created_at: newUser.created_at
+        }
+      });
     });
 
   } catch (error) {
@@ -234,16 +245,27 @@ router.post('/login', async (req, res) => {
 
     // Save to session
     req.session.userId = user.id;
-
-    return res.json({
-      success: true,
-      user: {
-        id: user.id,
-        email: user.email,
-        external_customer_id: user.external_customer_id,
-        plan: user.plan,
-        created_at: user.created_at
+    req.session.save((err) => {
+      if (err) {
+        console.error('[Login Session Save Error]:', err);
+        return res.status(500).json({
+          success: false,
+          error: {
+            code: 'SESSION_ERROR',
+            message: 'Failed to establish user session. Please try logging in.'
+          }
+        });
       }
+      return res.json({
+        success: true,
+        user: {
+          id: user.id,
+          email: user.email,
+          external_customer_id: user.external_customer_id,
+          plan: user.plan,
+          created_at: user.created_at
+        }
+      });
     });
 
   } catch (error) {
