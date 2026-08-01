@@ -5,6 +5,8 @@ import { initDatabase } from './db/init.js';
 import { validateEnv, config } from './config/env.js';
 import authRoutes from './routes/auth.js';
 import textRoutes from './routes/text.js';
+import usageRoutes from './routes/usage.js';
+import billingRoutes from './routes/billing.js';
 import { requireAuth } from './middleware/requireAuth.js';
 
 // Validate environment variables on boot
@@ -44,12 +46,10 @@ app.get('/api/health', (req, res) => {
 // Route Handlers
 app.use('/api/auth', authRoutes);
 
-// Mount text processing routes (protected by authentication)
+// Protected routes
 app.use('/api/process', requireAuth, textRoutes);
-
-// TODO: Add other route handlers
-// app.use('/api/usage', usageRoutes);
-// app.use('/api', billingRoutes);
+app.use('/api/usage', requireAuth, usageRoutes);
+app.use('/api/billing', requireAuth, billingRoutes);
 
 app.listen(PORT, () => {
   console.log(`🚀 TextFlow server running on port ${PORT}`);
