@@ -4,7 +4,7 @@
 
 During telemetry ingestion in `TextFlow`, character processing events were being sent successfully to Flexprice, but the customer dashboard usage values remained at `0% Used` (even after multiple successful summarization/rewrite requests).
 
-We identified and resolved two consecutive issues causing this behavior:
+We identified and resolved three consecutive issues causing this behavior:
 
 ---
 
@@ -48,15 +48,7 @@ Even after aligning the topics, events were not appearing in ClickHouse due to a
 1. **Added Environment Header**:
    Modified `textflow/server/src/flexprice/client.js` to pass the Sandbox environment ID header matching the PostgreSQL database setup:
    ```javascript
-   const flexpriceClient = axios.create({
-     baseURL: `${baseURL}/v1`,
-     timeout: 30000,
-     headers: {
-       'Content-Type': 'application/json',
-       'x-api-key': apiKey,
-       'x-environment-id': '00000000-0000-0000-0000-000000000000'
-     }
-   });
+   'x-environment-id': '00000000-0000-0000-0000-000000000000'
    ```
 2. **Created DLQ Topics**:
    Created the missing `event_processing_dlq` and `staging_events_dlq` topics on the Kafka broker to let the consumer clean out any legacy invalid events.
@@ -65,6 +57,39 @@ Even after aligning the topics, events were not appearing in ClickHouse due to a
 
 ---
 
+### Issue 3: Missing Entitlement Usage Calculation for Free Subscriptions (No-Charge Items)
+Once events were successfully written to ClickHouse, the usage summary endpoint `/customers/usage` still returned `0` usage for Free plan users.
+1. **No-Charge Metered Features**:
+   Under the Free Plan, the `Characters Processed` entitlement exists with a limit of 2,000, but has *no price* associated with it (it is a $0.00 free tier plan, so it does not contain a metered pricing charge line item).
+2. **Charges Loop Dependency**:
+   In Flexprice's `billingService.GetCustomerUsageSummary` method (`flexprice/internal/ee/service/billing.go`), usage calculations were nested solely inside the loop processing active subscription charges:
+   ```go
+   for _, charge := range usage.Charges { ... }
+   ```
+   Because features without price items are omitted from subscription charges, the billing service bypassed querying ClickHouse for these metered features, leaving their usage values uninitialized (`0`).
+
+#### Fix: Added Fallback Ingestion Query for Free Entitlements
+Modified `flexprice/internal/ee/service/billing.go` to add a proactive fallback loop. If a metered feature is entitled to a subscription but does not have any active charges (which is the case for free tiers), the billing service will dynamically query ClickHouse for the meter's telemetry:
+```go
+	// 3.5. Proactively fetch usage for metered features that do not have charges (e.g. Free plan features)
+	for _, feature := range entitlements.Features {
+		featureID := feature.Feature.ID
+		if types.FeatureType(feature.Feature.Type) != types.FeatureTypeMetered {
+			continue
+		}
+		if !usageByFeature[featureID].IsZero() {
+			continue
+		}
+        ...
+		usageResult, err := eventService.GetUsageByMeter(ctx, usageRequest)
+        ...
+	}
+```
+Rebuilt the `flexprice-build` container image without caching and restarted the compose cluster.
+
+---
+
 ## 🧪 Verification
-* ClickHouse `events` table row count now successfully increments from `0` to `1` as new events with valid `environment_id` headers are processed.
-* The consumer successfully routing poison messages ensures the ingestion queue remains clean and responsive.
+* ClickHouse `events` table row count successfully registers new character processing events.
+* Direct query to `/customers/usage?customer_lookup_key=<user>` now successfully returns the exact character count processed (e.g., `1983 / 2000`).
+* The UI dashboard **Usage & Quota** progress bar correctly displays live usage.
