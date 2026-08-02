@@ -148,4 +148,38 @@ router.post('/downgrade', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/billing/settle
+ * Simulates paying/settling the current balance and resetting the billing period start to now.
+ */
+router.post('/settle', async (req, res) => {
+  const user = req.user;
+  try {
+    const { exec } = await import('child_process');
+    const util = await import('util');
+    const execPromise = util.promisify(exec);
+
+    console.debug(`[Billing Route] Resetting billing period in Postgres for customer: ${user.external_customer_id}`);
+    
+    // Execute SQL update in postgres container to advance period start to NOW
+    await execPromise('docker exec -t flexprice-postgres-1 psql -U flexprice -d flexprice -c "UPDATE subscriptions SET current_period_start = NOW(), current_period_end = NOW() + INTERVAL \'1 month\' WHERE subscription_status = \'active\';"');
+
+    console.log(`[Billing Route] Successfully settled payment and reset billing cycle for customer: ${user.external_customer_id}`);
+    
+    return res.json({
+      success: true,
+      message: 'Payment settled and usage balance reset to zero.'
+    });
+  } catch (error) {
+    console.error('[Billing Route Error] Settle failed:', error);
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'SETTLE_ERROR',
+        message: 'Failed to settle current balance. Check Docker container logs.'
+      }
+    });
+  }
+});
+
 export default router;

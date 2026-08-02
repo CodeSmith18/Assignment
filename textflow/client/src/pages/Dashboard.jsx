@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext.jsx';
-import { processAPI, usageAPI } from '../api.js';
+import { processAPI, usageAPI, billingAPI } from '../api.js';
 import UsageBar from '../components/UsageBar.jsx';
 import ToneSelector from '../components/ToneSelector.jsx';
 import UpgradeModal from '../components/UpgradeModal.jsx';
@@ -154,6 +154,23 @@ export default function Dashboard() {
   const handlePlanSync = (newPlan) => {
     setCurrentPlan(newPlan);
     fetchDashboardData(historyLimit, historyOffset);
+  };
+
+  const handleSettle = async () => {
+    setErrorMessage('');
+    setSuccessMessage('');
+    try {
+      console.debug('[Dashboard] Settling customer usage balance...');
+      const res = await billingAPI.settle();
+      if (res.success) {
+        setSuccessMessage('Payment settled! Your usage balance has been reset to zero.');
+        fetchDashboardData(historyLimit, historyOffset);
+      } else {
+        setErrorMessage(res.error?.message || 'Failed to settle balance.');
+      }
+    } catch (err) {
+      setErrorMessage('Connection failed.');
+    }
   };
 
   const handleLogout = async () => {
@@ -318,6 +335,7 @@ export default function Dashboard() {
             usageData={usageData} 
             currentPlan={currentPlan}
             onUpgradeClick={() => setIsUpgradeModalOpen(true)} 
+            onSettleClick={handleSettle}
           />
         </div>
       </div>

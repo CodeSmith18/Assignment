@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 
-export default function UsageBar({ usageData, currentPlan, onUpgradeClick }) {
+export default function UsageBar({ usageData, currentPlan, onUpgradeClick, onSettleClick }) {
+  const [settling, setSettling] = useState(false);
+
   if (!usageData || !usageData.charactersProcessed) {
     return (
       <div className="usage-bar-skeleton">
@@ -23,6 +25,15 @@ export default function UsageBar({ usageData, currentPlan, onUpgradeClick }) {
     const sumCount = usageData.charactersSummarized?.current ?? 0;
     const rewriteCount = usageData.charactersRewritten?.current ?? 0;
     const resetDate = usageData.charactersProcessed.resetDate;
+
+    const performSettle = async () => {
+      setSettling(true);
+      try {
+        await onSettleClick();
+      } finally {
+        setSettling(false);
+      }
+    };
 
     return (
       <div className="usage-card payg-card">
@@ -53,6 +64,27 @@ export default function UsageBar({ usageData, currentPlan, onUpgradeClick }) {
             <strong>{rewriteCount.toLocaleString()} chars ($1.00/1k)</strong>
           </div>
         </div>
+
+        {cost > 0 && (
+          <button 
+            onClick={performSettle} 
+            disabled={settling}
+            style={{
+              marginTop: '1rem',
+              width: '100%',
+              padding: '0.5rem 1rem',
+              backgroundColor: '#10b981',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '0.25rem',
+              fontWeight: 'bold',
+              cursor: settling ? 'not-allowed' : 'pointer',
+              opacity: settling ? 0.7 : 1
+            }}
+          >
+            {settling ? 'Settling Payment...' : `Settle & Pay $${cost.toFixed(2)}`}
+          </button>
+        )}
 
         {resetDate && (
           <div className="usage-reset" style={{ marginTop: '1rem', borderTop: '1px solid #374151', paddingTop: '0.5rem', fontSize: '0.75rem', opacity: 0.8 }}>

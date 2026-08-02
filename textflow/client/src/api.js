@@ -73,5 +73,6 @@ export const usageAPI = {
 
 export const billingAPI = {
   upgrade: (plan = 'pro') => apiCall('/billing/upgrade', { method: 'POST', body: { plan } }),
-  downgrade: () => apiCall('/billing/downgrade', { method: 'POST' })
+  downgrade: () => apiCall('/billing/downgrade', { method: 'POST' }),
+  settle: () => apiCall('/billing/settle', { method: 'POST' })
 };
