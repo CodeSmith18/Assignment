@@ -4,57 +4,67 @@
 
 During telemetry ingestion in `TextFlow`, character processing events were being sent successfully to Flexprice, but the customer dashboard usage values remained at `0% Used` (even after multiple successful summarization/rewrite requests).
 
-The issue was traced to a mismatch between where the **Flexprice API Publisher** sent events and where the **Flexprice Worker Consumer** listened for them:
-
-1. **Publisher Topic (`staging_events`)**:
-   In Flexprice's `config.yaml`, the default destination for API-published telemetry events is configured under `kafka.topic`:
-   ```yaml
-   kafka:
-     topic: "staging_events"
-   ```
-   All `/events` ingestion calls from TextFlow were being written to `staging_events` on Kafka.
-
-2. **Consumer Topic (`events`)**:
-   The Watermill consumer task responsible for processing these events and writing them to the ClickHouse analytical database was configured to listen under `event_processing.topic`:
-   ```yaml
-   event_processing:
-     topic: "events"
-   ```
-
-3. **Mismatched Transmission**:
-   Because of this discrepancy in the docker stack's default configurations:
-   * Telemetry events were sent to `staging_events`.
-   * The consumer was listening on `events` (where no events were arriving).
-   * ClickHouse `events` and `raw_events` database tables remained at `0` rows, resulting in `0` accumulated usage metrics.
+We identified and resolved two consecutive issues causing this behavior:
 
 ---
 
-## 🛠️ Resolution and Changes
+### Issue 1: Kafka Ingestion Topic Mismatch
+The worker consumer was decoupled from the publisher due to mismatched topic configurations in `config.yaml`:
+1. **Publisher Topic (`staging_events`)**:
+   In Flexprice's `config.yaml`, the default destination for API-published telemetry events is configured under `kafka.topic: "staging_events"`.
+2. **Consumer Topic (`events`)**:
+   The consumer task responsible for processing events was configured to listen under `event_processing.topic: "events"`.
+3. **Outcome**:
+   Events sent from TextFlow to `/events` went to `staging_events` and were never read by the consumer listening on `events`.
 
-To resolve this issue, the publisher and consumer Kafka topics were aligned to `"events"` globally across all services:
-
-### 1. Docker Compose Configuration Overrides
+#### Fix: Topic Alignment
 We added environment overrides in `flexprice/docker-compose.yml` to force all Flexprice containers to publish and bind to the correct topics:
-* **File Modified**: [flexprice/docker-compose.yml](file:///d:/Assingment/flexprice/docker-compose.yml)
-* **Configuration Added**:
-  ```yaml
-        - FLEXPRICE_KAFKA_TOPIC=events
-        - FLEXPRICE_KAFKA_TOPIC_LAZY=events_lazy
-        - FLEXPRICE_KAFKA_TOPIC_BULK=events_bulk
-  ```
-  These variables were applied to the following containers:
-  * `flexprice-api`
-  * `flexprice-consumer`
-  * `flexprice-worker`
-
-### 2. Service Restart
-After applying the environment variables, the Docker services were restarted:
-```powershell
-docker compose down
-docker compose up -d
+```yaml
+      - FLEXPRICE_KAFKA_TOPIC=events
+      - FLEXPRICE_KAFKA_TOPIC_LAZY=events_lazy
+      - FLEXPRICE_KAFKA_TOPIC_BULK=events_bulk
 ```
+These were applied to:
+* `flexprice-api`
+* `flexprice-consumer`
+* `flexprice-worker`
 
-### 3. Verification
-* Verified using Kafka CLI that all topics (`events`, `events_lazy`) exist on the broker.
-* Inspected the consumer logs (`flexprice-consumer`), confirming that the Watermill routing successfully established consumer group claims on the correct topic:
-  `[watermill] level=DEBUG msg="Consume claimed" consumer_group=flexprice-consumer-local ... topic=events`
+---
+
+### Issue 2: Empty Environment ID Constraint Violation in ClickHouse
+Even after aligning the topics, events were not appearing in ClickHouse due to a table constraint violation:
+1. **ClickHouse Table Constraint**:
+   The ClickHouse `events` table defines a strict constraint:
+   `CONSTRAINT check_environment_id CHECK environment_id != ''`
+2. **Missing Request Header**:
+   Flexprice extracts the `environment_id` for api key operations from the HTTP header:
+   `X-Environment-ID`
+   Because our Node backend client `client.js` was only sending `x-api-key`, the request environment resolved to `""`.
+3. **Consumer DLQ Blocking**:
+   The consumer received the event with `environment_id: ""`, tried to insert it, and got a ClickHouse database exception. 
+   Because the DLQ topic `event_processing_dlq` was missing on the Kafka broker, the poison handler could not offload it, causing the consumer to retry the invalid event indefinitely and block the entire partition from advancing.
+
+#### Fix: Client Header Injection & DLQ Topic Creation
+1. **Added Environment Header**:
+   Modified `textflow/server/src/flexprice/client.js` to pass the Sandbox environment ID header matching the PostgreSQL database setup:
+   ```javascript
+   const flexpriceClient = axios.create({
+     baseURL: `${baseURL}/v1`,
+     timeout: 30000,
+     headers: {
+       'Content-Type': 'application/json',
+       'x-api-key': apiKey,
+       'x-environment-id': '00000000-0000-0000-0000-000000000000'
+     }
+   });
+   ```
+2. **Created DLQ Topics**:
+   Created the missing `event_processing_dlq` and `staging_events_dlq` topics on the Kafka broker to let the consumer clean out any legacy invalid events.
+3. **Gitignore Adjustment**:
+   Adjusted the root `.gitignore` to anchor the `flexprice/` ignore directory as `/flexprice/`, ensuring nested client code in `textflow/server/src/flexprice/` is correctly tracked and versioned.
+
+---
+
+## 🧪 Verification
+* ClickHouse `events` table row count now successfully increments from `0` to `1` as new events with valid `environment_id` headers are processed.
+* The consumer successfully routing poison messages ensures the ingestion queue remains clean and responsive.
