@@ -4,13 +4,14 @@ import { config } from '../config/env.js';
 // Feature name mapping to environment variables
 const FEATURE_MAPPING = {
   'tone_selector': config.toneFeatureId,
-  'characters_processed': config.charFeatureId
+  'characters_summarized': config.charSummarizedFeatureId,
+  'characters_rewritten': config.charRewrittenFeatureId
 };
 
 /**
  * Helper to determine user's plan name dynamically based on their active subscription.
  * @param {array} subscriptions - Array of subscription objects from Flexprice
- * @returns {string} 'free' | 'pro' | 'unknown'
+ * @returns {string} 'free' | 'pro' | 'payg' | 'unknown'
  */
 function determinePlan(subscriptions) {
   if (!subscriptions || subscriptions.length === 0) {
@@ -20,6 +21,9 @@ function determinePlan(subscriptions) {
   if (activeSub.plan_id === config.proPlanId) {
     return 'pro';
   }
+  if (activeSub.plan_id === config.paygPlanId) {
+    return 'payg';
+  }
   return 'free';
 }
 
@@ -27,15 +31,19 @@ function determinePlan(subscriptions) {
  * Checks if a user is within their monthly character processing quota.
  * @param {string} externalCustomerId - Customer's external ID
  * @param {number} incomingCharacterCount - Number of characters to process
+ * @param {string} operationType - 'summarize' | 'rewrite'
  * @returns {Promise<object>} Validation decision payload
  */
-export async function checkUsageQuota(externalCustomerId, incomingCharacterCount) {
+export async function checkUsageQuota(externalCustomerId, incomingCharacterCount, operationType = 'summarize') {
   try {
-    if (!config.charFeatureId) {
+    const featureId = operationType === 'summarize' ? config.charSummarizedFeatureId : config.charRewrittenFeatureId;
+    const featureLabel = operationType === 'summarize' ? 'Characters Summarized' : 'Characters Rewritten';
+
+    if (!featureId) {
       return {
         allowed: false,
         reason: 'configuration_error',
-        message: 'Characters Processed feature ID is not configured on the server.',
+        message: `${featureLabel} feature ID is not configured on the server.`,
         plan: 'free'
       };
     }
@@ -43,21 +51,21 @@ export async function checkUsageQuota(externalCustomerId, incomingCharacterCount
     // 1. Fetch entitlements and usage in parallel
     const [entitlementsRes, usageRes] = await Promise.all([
       getCustomerEntitlements(externalCustomerId),
-      getCustomerUsage({ customer_lookup_key: externalCustomerId, feature_ids: [config.charFeatureId] })
+      getCustomerUsage({ customer_lookup_key: externalCustomerId, feature_ids: [featureId] })
     ]);
 
     const plan = determinePlan(entitlementsRes.subscriptions);
 
     // 2. Extract entitlement limit
     const charEnt = entitlementsRes.features?.find(
-      f => f.feature?.id === config.charFeatureId || f.feature?.name === 'Characters Processed'
+      f => f.feature?.id === featureId || f.feature?.name === featureLabel
     );
 
     if (!charEnt) {
       return {
         allowed: false,
         reason: 'configuration_error',
-        message: 'Characters Processed entitlement not found in customer profile. Check seeding status.',
+        message: `${featureLabel} entitlement not found in customer profile. Check seeding status.`,
         plan
       };
     }
@@ -66,13 +74,13 @@ export async function checkUsageQuota(externalCustomerId, incomingCharacterCount
 
     // 3. Extract current usage
     const charUsage = usageRes.features?.find(
-      f => f.feature?.id === config.charFeatureId || f.feature?.name === 'Characters Processed'
+      f => f.feature?.id === featureId || f.feature?.name === featureLabel
     );
 
     const current = charUsage ? parseFloat(charUsage.current_usage || 0) : 0;
     const remaining = Math.max(0, limit - current);
     const afterProcessing = current + incomingCharacterCount;
-    const percent = parseFloat(((current / limit) * 100).toFixed(1));
+    const percent = limit > 0 ? parseFloat(((current / limit) * 100).toFixed(1)) : 0;
 
     const usagePayload = {
       current,
@@ -82,10 +90,18 @@ export async function checkUsageQuota(externalCustomerId, incomingCharacterCount
       afterProcessing
     };
 
-    // 4. Decision check
+    // 4. Decision check (Pay-As-You-Go users are never blocked)
+    if (plan === 'payg') {
+      return {
+        allowed: true,
+        usage: usagePayload,
+        plan
+      };
+    }
+
     if (afterProcessing > limit) {
       const upgradeMsg = plan === 'free' 
-        ? 'Upgrade to Pro for 50,000 characters/month.'
+        ? 'Upgrade to Pro for 50,000 characters/month or switch to Pay-As-You-Go.'
         : 'Contact support to increase your Pro plan usage limits.';
       
       return {
@@ -201,29 +217,66 @@ export async function getCurrentUsage(externalCustomerId) {
     const planName = determinePlan(entitlementsRes.subscriptions);
     const activeSub = entitlementsRes.subscriptions?.find(s => s.subscription_status === 'active') || {};
 
-    // 1. Compile metered usage
-    const charEnt = entitlementsRes.features?.find(f => f.feature?.id === config.charFeatureId);
-    const charUsage = usageRes.features?.find(f => f.feature?.id === config.charFeatureId);
-    
-    const charLimit = charEnt?.entitlement?.usage_limit || 2000;
-    const charCurrent = charUsage ? parseFloat(charUsage.current_usage || 0) : 0;
-    const charRemaining = Math.max(0, charLimit - charCurrent);
-    const charPercent = parseFloat(((charCurrent / charLimit) * 100).toFixed(1));
+    // 1. Compile metered usage - Summarized
+    const sumEnt = entitlementsRes.features?.find(
+      f => f.feature?.id === config.charSummarizedFeatureId || f.feature?.name === 'Characters Summarized'
+    );
+    const sumUsage = usageRes.features?.find(
+      f => f.feature?.id === config.charSummarizedFeatureId || f.feature?.name === 'Characters Summarized'
+    );
+    const sumLimit = sumEnt?.entitlement?.usage_limit || 2000;
+    const sumCurrent = sumUsage ? parseFloat(sumUsage.current_usage || 0) : 0;
+    const sumRemaining = Math.max(0, sumLimit - sumCurrent);
+    const sumPercent = sumLimit > 0 ? parseFloat(((sumCurrent / sumLimit) * 100).toFixed(1)) : 0;
 
-    // 2. Compile boolean features
+    // 2. Compile metered usage - Rewritten
+    const rewriteEnt = entitlementsRes.features?.find(
+      f => f.feature?.id === config.charRewrittenFeatureId || f.feature?.name === 'Characters Rewritten'
+    );
+    const rewriteUsage = usageRes.features?.find(
+      f => f.feature?.id === config.charRewrittenFeatureId || f.feature?.name === 'Characters Rewritten'
+    );
+    const rewriteLimit = rewriteEnt?.entitlement?.usage_limit || 2000;
+    const rewriteCurrent = rewriteUsage ? parseFloat(rewriteUsage.current_usage || 0) : 0;
+    const rewriteRemaining = Math.max(0, rewriteLimit - rewriteCurrent);
+    const rewritePercent = rewriteLimit > 0 ? parseFloat(((rewriteCurrent / rewriteLimit) * 100).toFixed(1)) : 0;
+
+    // 3. Calculate accumulated cost for Pay-As-You-Go ($0.80/1k sum + $1.00/1k rewrite)
+    const accumulatedCost = parseFloat(((sumCurrent * 0.0008) + (rewriteCurrent * 0.001)).toFixed(2));
+
+    // 4. Compile boolean features
     const toneEnt = entitlementsRes.features?.find(f => f.feature?.id === config.toneFeatureId);
     const toneEnabled = !!toneEnt?.entitlement?.is_enabled;
+
+    // Backward compatibility for general charts tracking
+    const totalCurrent = sumCurrent + rewriteCurrent;
+    const totalLimit = planName === 'free' ? 2000 : planName === 'pro' ? 50000 : 0;
+    const totalRemaining = Math.max(0, totalLimit - totalCurrent);
+    const totalPercent = totalLimit > 0 ? parseFloat(((totalCurrent / totalLimit) * 100).toFixed(1)) : 0;
 
     return {
       success: true,
       usage: {
         charactersProcessed: {
-          current: charCurrent,
-          limit: charLimit,
-          remaining: charRemaining,
-          percent: charPercent,
+          current: totalCurrent,
+          limit: totalLimit,
+          remaining: totalRemaining,
+          percent: totalPercent,
           resetDate: activeSub.current_period_end || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
-        }
+        },
+        charactersSummarized: {
+          current: sumCurrent,
+          limit: sumLimit,
+          remaining: sumRemaining,
+          percent: sumPercent
+        },
+        charactersRewritten: {
+          current: rewriteCurrent,
+          limit: rewriteLimit,
+          remaining: rewriteRemaining,
+          percent: rewritePercent
+        },
+        accumulatedCost
       },
       features: {
         toneSelector: {
@@ -233,9 +286,9 @@ export async function getCurrentUsage(externalCustomerId) {
       },
       plan: {
         name: planName,
-        displayName: planName.charAt(0).toUpperCase() + planName.slice(1),
+        displayName: planName === 'payg' ? 'Pay-As-You-Go' : planName.charAt(0).toUpperCase() + planName.slice(1),
         limits: {
-          charactersPerMonth: charLimit
+          charactersPerMonth: totalLimit
         }
       },
       subscription: {

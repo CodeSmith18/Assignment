@@ -98,7 +98,7 @@ async function seed() {
       
       const pRes = await flexpriceClient.get('/plans');
       for (const p of pRes.items || []) {
-        if (p.lookup_key === 'free_plan' || p.lookup_key === 'pro_plan') {
+        if (['free_plan', 'pro_plan', 'payg_plan'].includes(p.lookup_key)) {
           console.log(`   - Deleting plan ${p.name} (${p.id})...`);
           await flexpriceClient.delete(`/plans/${p.id}`).catch(() => {});
         }
@@ -106,54 +106,99 @@ async function seed() {
 
       const fRes = await flexpriceClient.get('/features');
       for (const f of fRes.items || []) {
-        if (f.name === 'Characters Processed' || f.name === 'Tone Selector') {
+        if (['Characters Processed', 'Characters Summarized', 'Characters Rewritten', 'Tone Selector'].includes(f.name)) {
           console.log(`   - Deleting feature ${f.name} (${f.id})...`);
           await flexpriceClient.delete(`/features/${f.id}`).catch(() => {});
         }
       }
     }
 
-    let charFeatureId = '';
+    let charSummarizedFeatureId = '';
+    let charSummarizedMeterId = '';
+    let charRewrittenFeatureId = '';
+    let charRewrittenMeterId = '';
     let toneFeatureId = '';
-    let charMeterId = '';
     let freePlanId = '';
     let proPlanId = '';
+    let paygPlanId = '';
 
     // =========================================================================
     // Part B: Feature Creation
     // =========================================================================
 
-    // 1. Metered Feature: Characters Processed
-    console.log('\nStep 1: Setting up Metered Feature: "Characters Processed"...');
-    const existingCharFeature = existingFeatures.find(f => f.name === 'Characters Processed');
+    // 1a. Metered Feature: Characters Summarized
+    console.log('\nStep 1a: Setting up Metered Feature: "Characters Summarized"...');
+    const existingSumFeature = existingFeatures.find(f => f.name === 'Characters Summarized');
     
-    if (existingCharFeature) {
-      console.log(`✅ Feature "Characters Processed" already exists. ID: ${existingCharFeature.id}`);
-      charFeatureId = existingCharFeature.id;
-      charMeterId = existingCharFeature.meter_id || existingCharFeature.meter?.id;
+    if (existingSumFeature) {
+      console.log(`✅ Feature "Characters Summarized" already exists. ID: ${existingSumFeature.id}`);
+      charSummarizedFeatureId = existingSumFeature.id;
+      charSummarizedMeterId = existingSumFeature.meter_id || existingSumFeature.meter?.id;
     } else {
-      const charFeaturePayload = {
-        name: 'Characters Processed',
+      const payload = {
+        name: 'Characters Summarized',
+        lookup_key: 'characters_summarized',
         type: 'metered',
         unit_singular: 'character',
         unit_plural: 'characters',
         meter: {
-          name: 'Characters Processed Meter',
+          name: 'Characters Summarized Meter',
           event_name: 'text_processed',
           aggregation: { type: 'SUM', field: 'char_count' },
+          filters: [
+            { key: 'operation_type', values: ['summarize'] }
+          ],
           reset_usage: 'BILLING_PERIOD'
         }
       };
 
       if (!isDryRun) {
-        const response = await flexpriceClient.post('/features', charFeaturePayload);
-        charFeatureId = response.id;
-        charMeterId = response.meter_id || response.meter?.id;
-        console.log(`✅ Created Metered Feature: "Characters Processed". ID: ${charFeatureId}, Meter ID: ${charMeterId}`);
+        const response = await flexpriceClient.post('/features', payload);
+        charSummarizedFeatureId = response.id;
+        charSummarizedMeterId = response.meter_id || response.meter?.id;
+        console.log(`✅ Created Feature: "Characters Summarized". ID: ${charSummarizedFeatureId}, Meter ID: ${charSummarizedMeterId}`);
       } else {
-        console.log('ℹ️ [Dry Run] Would create feature "Characters Processed"');
-        charFeatureId = 'mock_char_feature_id';
-        charMeterId = 'mock_char_meter_id';
+        console.log('ℹ️ [Dry Run] Would create feature "Characters Summarized"');
+        charSummarizedFeatureId = 'mock_sum_feature_id';
+        charSummarizedMeterId = 'mock_sum_meter_id';
+      }
+    }
+
+    // 1b. Metered Feature: Characters Rewritten
+    console.log('\nStep 1b: Setting up Metered Feature: "Characters Rewritten"...');
+    const existingRewriteFeature = existingFeatures.find(f => f.name === 'Characters Rewritten');
+    
+    if (existingRewriteFeature) {
+      console.log(`✅ Feature "Characters Rewritten" already exists. ID: ${existingRewriteFeature.id}`);
+      charRewrittenFeatureId = existingRewriteFeature.id;
+      charRewrittenMeterId = existingRewriteFeature.meter_id || existingRewriteFeature.meter?.id;
+    } else {
+      const payload = {
+        name: 'Characters Rewritten',
+        lookup_key: 'characters_rewritten',
+        type: 'metered',
+        unit_singular: 'character',
+        unit_plural: 'characters',
+        meter: {
+          name: 'Characters Rewritten Meter',
+          event_name: 'text_processed',
+          aggregation: { type: 'SUM', field: 'char_count' },
+          filters: [
+            { key: 'operation_type', values: ['rewrite'] }
+          ],
+          reset_usage: 'BILLING_PERIOD'
+        }
+      };
+
+      if (!isDryRun) {
+        const response = await flexpriceClient.post('/features', payload);
+        charRewrittenFeatureId = response.id;
+        charRewrittenMeterId = response.meter_id || response.meter?.id;
+        console.log(`✅ Created Feature: "Characters Rewritten". ID: ${charRewrittenFeatureId}, Meter ID: ${charRewrittenMeterId}`);
+      } else {
+        console.log('ℹ️ [Dry Run] Would create feature "Characters Rewritten"');
+        charRewrittenFeatureId = 'mock_rewrite_feature_id';
+        charRewrittenMeterId = 'mock_rewrite_meter_id';
       }
     }
 
@@ -233,90 +278,64 @@ async function seed() {
       }
     }
 
+    // 3. Pay-As-You-Go Plan
+    console.log('\nStep 4b: Setting up Pay-As-You-Go Plan...');
+    const existingPaygPlan = existingPlans.find(p => p.lookup_key === 'payg_plan');
+    
+    if (existingPaygPlan) {
+      console.log(`✅ Plan "Pay-As-You-Go" already exists. ID: ${existingPaygPlan.id}`);
+      paygPlanId = existingPaygPlan.id;
+    } else {
+      const paygPlanPayload = {
+        name: 'Pay-As-You-Go',
+        lookup_key: 'payg_plan',
+        description: 'Pay only what you use — Metered billing'
+      };
+
+      if (!isDryRun) {
+        const response = await flexpriceClient.post('/plans', paygPlanPayload);
+        paygPlanId = response.id;
+        console.log(`✅ Created Pay-As-You-Go Plan. ID: ${paygPlanId}`);
+      } else {
+        console.log('ℹ️ [Dry Run] Would create plan "Pay-As-You-Go"');
+        paygPlanId = 'mock_payg_plan_id';
+      }
+    }
+
     // =========================================================================
     // Part D: Entitlement Creation
     // =========================================================================
     console.log('\nStep 5: Setting up Entitlements...');
 
-    // Free Plan - Metered Entitlement
-    const freeCharEnt = existingEntitlements.find(e => e.plan_id === freePlanId && e.feature_id === charFeatureId);
-    if (freeCharEnt) {
-      console.log('✅ Entitlement: "Free plan -> Characters Processed" already exists.');
-    } else {
-      const payload = {
-        plan_id: freePlanId,
-        feature_id: charFeatureId,
-        feature_type: 'metered',
-        usage_limit: 2000,
-        usage_reset_period: 'MONTHLY',
-        is_soft_limit: false,
-        is_enabled: true
-      };
-      if (!isDryRun) {
-        await flexpriceClient.post('/entitlements', payload);
-        console.log('✅ Created entitlement: Free Plan -> Characters Processed (2,000 limit)');
-      } else {
-        console.log('ℹ️ [Dry Run] Would create entitlement: Free Plan -> Characters Processed (2k)');
-      }
-    }
+    const entitlementsToCreate = [
+      // FREE PLAN
+      { plan_id: freePlanId, feature_id: charSummarizedFeatureId, feature_type: 'metered', usage_limit: 2000, usage_reset_period: 'MONTHLY', is_soft_limit: false, is_enabled: true },
+      { plan_id: freePlanId, feature_id: charRewrittenFeatureId, feature_type: 'metered', usage_limit: 2000, usage_reset_period: 'MONTHLY', is_soft_limit: false, is_enabled: true },
+      { plan_id: freePlanId, feature_id: toneFeatureId, feature_type: 'boolean', is_enabled: false },
 
-    // Free Plan - Boolean Entitlement (disabled)
-    const freeToneEnt = existingEntitlements.find(e => e.plan_id === freePlanId && e.feature_id === toneFeatureId);
-    if (freeToneEnt) {
-      console.log('✅ Entitlement: "Free plan -> Tone Selector" already exists.');
-    } else {
-      const payload = {
-        plan_id: freePlanId,
-        feature_id: toneFeatureId,
-        feature_type: 'boolean',
-        is_enabled: false
-      };
-      if (!isDryRun) {
-        await flexpriceClient.post('/entitlements', payload);
-        console.log('✅ Created entitlement: Free Plan -> Tone Selector (Disabled)');
-      } else {
-        console.log('ℹ️ [Dry Run] Would create entitlement: Free Plan -> Tone Selector (Disabled)');
-      }
-    }
+      // PRO PLAN
+      { plan_id: proPlanId, feature_id: charSummarizedFeatureId, feature_type: 'metered', usage_limit: 50000, usage_reset_period: 'MONTHLY', is_soft_limit: false, is_enabled: true },
+      { plan_id: proPlanId, feature_id: charRewrittenFeatureId, feature_type: 'metered', usage_limit: 50000, usage_reset_period: 'MONTHLY', is_soft_limit: false, is_enabled: true },
+      { plan_id: proPlanId, feature_id: toneFeatureId, feature_type: 'boolean', is_enabled: true },
 
-    // Pro Plan - Metered Entitlement
-    const proCharEnt = existingEntitlements.find(e => e.plan_id === proPlanId && e.feature_id === charFeatureId);
-    if (proCharEnt) {
-      console.log('✅ Entitlement: "Pro plan -> Characters Processed" already exists.');
-    } else {
-      const payload = {
-        plan_id: proPlanId,
-        feature_id: charFeatureId,
-        feature_type: 'metered',
-        usage_limit: 50000,
-        usage_reset_period: 'MONTHLY',
-        is_soft_limit: false,
-        is_enabled: true
-      };
-      if (!isDryRun) {
-        await flexpriceClient.post('/entitlements', payload);
-        console.log('✅ Created entitlement: Pro Plan -> Characters Processed (50,000 limit)');
-      } else {
-        console.log('ℹ️ [Dry Run] Would create entitlement: Pro Plan -> Characters Processed (50k)');
-      }
-    }
+      // PAY-AS-YOU-GO PLAN
+      { plan_id: paygPlanId, feature_id: charSummarizedFeatureId, feature_type: 'metered', usage_limit: 0, usage_reset_period: 'MONTHLY', is_soft_limit: true, is_enabled: true },
+      { plan_id: paygPlanId, feature_id: charRewrittenFeatureId, feature_type: 'metered', usage_limit: 0, usage_reset_period: 'MONTHLY', is_soft_limit: true, is_enabled: true },
+      { plan_id: paygPlanId, feature_id: toneFeatureId, feature_type: 'boolean', is_enabled: true },
+    ];
 
-    // Pro Plan - Boolean Entitlement (enabled)
-    const proToneEnt = existingEntitlements.find(e => e.plan_id === proPlanId && e.feature_id === toneFeatureId);
-    if (proToneEnt) {
-      console.log('✅ Entitlement: "Pro plan -> Tone Selector" already exists.');
-    } else {
-      const payload = {
-        plan_id: proPlanId,
-        feature_id: toneFeatureId,
-        feature_type: 'boolean',
-        is_enabled: true
-      };
+    for (const ent of entitlementsToCreate) {
+      const exists = existingEntitlements.find(e => e.plan_id === ent.plan_id && e.feature_id === ent.feature_id);
+      if (exists) {
+        console.log(`✅ Entitlement for plan ${ent.plan_id} and feature ${ent.feature_id} already exists.`);
+        continue;
+      }
+
       if (!isDryRun) {
-        await flexpriceClient.post('/entitlements', payload);
-        console.log('✅ Created entitlement: Pro Plan -> Tone Selector (Enabled)');
+        await flexpriceClient.post('/entitlements', ent);
+        console.log(`✅ Created entitlement on plan ${ent.plan_id} for feature ${ent.feature_id}`);
       } else {
-        console.log('ℹ️ [Dry Run] Would create entitlement: Pro Plan -> Tone Selector (Enabled)');
+        console.log(`ℹ️ [Dry Run] Would create entitlement for plan ${ent.plan_id} for feature ${ent.feature_id}`);
       }
     }
 
@@ -350,9 +369,9 @@ async function seed() {
       }
     }
 
-    // Pro Plan - Fixed Flat Fee
-    const hasFixedPrice = existingPrices.find(p => p.entity_id === proPlanId && p.type === 'FIXED');
-    if (hasFixedPrice) {
+    // Pro Plan - Fixed Flat Fee ($9.00)
+    const hasProFixedPrice = existingPrices.find(p => p.entity_id === proPlanId && p.type === 'FIXED');
+    if (hasProFixedPrice) {
       console.log('✅ Price: "Pro plan -> Fixed Flat Fee ($9.00)" already exists.');
     } else {
       const payload = {
@@ -375,19 +394,19 @@ async function seed() {
       }
     }
 
-    // Pro Plan - Usage Package Fee
-    const hasUsagePrice = existingPrices.find(p => p.entity_id === proPlanId && p.type === 'USAGE');
-    if (hasUsagePrice) {
-      console.log('✅ Price: "Pro plan -> Usage Price ($0.50 per 1000 characters)" already exists.');
+    // PAY-AS-YOU-GO: Summarization Price ($0.80 per 1,000 characters -> $0.0008 unit)
+    const hasPaygSumPrice = existingPrices.find(p => p.entity_id === paygPlanId && p.meter_id === charSummarizedMeterId);
+    if (hasPaygSumPrice) {
+      console.log('✅ Price: "Pay-As-You-Go -> Summarization Price ($0.80 per 1000 characters)" already exists.');
     } else {
       const payload = {
         type: 'USAGE',
         billing_model: 'PACKAGE',
         entity_type: 'PLAN',
-        entity_id: proPlanId,
-        meter_id: charMeterId,
+        entity_id: paygPlanId,
+        meter_id: charSummarizedMeterId,
         currency: 'usd',
-        amount: '0.50',
+        amount: '0.80',
         billing_period: 'MONTHLY',
         billing_period_count: 1,
         price_unit_type: 'FIAT',
@@ -396,9 +415,36 @@ async function seed() {
       };
       if (!isDryRun) {
         await flexpriceClient.post('/prices', payload);
-        console.log('✅ Created usage package pricing ($0.50 per 1,000 characters) for Pro Plan.');
+        console.log('✅ Created usage pricing ($0.80/1k characters) for Pay-As-You-Go Summarization.');
       } else {
-        console.log('ℹ️ [Dry Run] Would create usage price ($0.50 per 1k chars) for Pro');
+        console.log('ℹ️ [Dry Run] Would create usage price ($0.80/1k chars) for PAYG Sum');
+      }
+    }
+
+    // PAY-AS-YOU-GO: Rewrite Price ($1.00 per 1,000 characters -> $0.001 unit)
+    const hasPaygRewritePrice = existingPrices.find(p => p.entity_id === paygPlanId && p.meter_id === charRewrittenMeterId);
+    if (hasPaygRewritePrice) {
+      console.log('✅ Price: "Pay-As-You-Go -> Rewrite Price ($1.00 per 1000 characters)" already exists.');
+    } else {
+      const payload = {
+        type: 'USAGE',
+        billing_model: 'PACKAGE',
+        entity_type: 'PLAN',
+        entity_id: paygPlanId,
+        meter_id: charRewrittenMeterId,
+        currency: 'usd',
+        amount: '1.00',
+        billing_period: 'MONTHLY',
+        billing_period_count: 1,
+        price_unit_type: 'FIAT',
+        invoice_cadence: 'ARREAR',
+        transform_quantity: { divide_by: 1000 }
+      };
+      if (!isDryRun) {
+        await flexpriceClient.post('/prices', payload);
+        console.log('✅ Created usage pricing ($1.00/1k characters) for Pay-As-You-Go Rewrite.');
+      } else {
+        console.log('ℹ️ [Dry Run] Would create usage price ($1.00/1k chars) for PAYG Rewrite');
       }
     }
 
@@ -409,9 +455,12 @@ async function seed() {
     const updates = {
       FREE_PLAN_ID: freePlanId,
       PRO_PLAN_ID: proPlanId,
-      CHAR_FEATURE_ID: charFeatureId,
-      TONE_FEATURE_ID: toneFeatureId,
-      CHAR_METER_ID: charMeterId
+      PAYG_PLAN_ID: paygPlanId,
+      CHAR_SUMMARIZED_FEATURE_ID: charSummarizedFeatureId,
+      CHAR_REWRITTEN_FEATURE_ID: charRewrittenFeatureId,
+      CHAR_SUMMARIZED_METER_ID: charSummarizedMeterId,
+      CHAR_REWRITTEN_METER_ID: charRewrittenMeterId,
+      TONE_FEATURE_ID: toneFeatureId
     };
 
     updateEnvFile(updates);

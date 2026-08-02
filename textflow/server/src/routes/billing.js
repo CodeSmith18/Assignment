@@ -32,8 +32,22 @@ async function updateLocalUserPlan(userId, planName, req) {
  */
 router.post('/upgrade', async (req, res) => {
   const user = req.user;
+  const { plan = 'pro' } = req.body;
 
   try {
+    const targetPlanId = plan === 'payg' ? config.paygPlanId : config.proPlanId;
+    const targetPlanName = plan === 'payg' ? 'payg' : 'pro';
+
+    if (!targetPlanId) {
+      return res.status(503).json({
+        success: false,
+        error: {
+          code: 'CONFIG_ERROR',
+          message: `The plan '${plan}' is not configured on this server.`
+        }
+      });
+    }
+
     console.debug(`[Billing Route] Fetching subscriptions for customer: ${user.external_customer_id}`);
     const subscriptionsRes = await getCustomerSubscriptions(user.external_customer_id);
     
@@ -51,19 +65,19 @@ router.post('/upgrade', async (req, res) => {
       });
     }
 
-    console.debug(`[Billing Route] Transitioning subscription ${activeSub.id} to Pro Plan: ${config.proPlanId}`);
-    const transitionRes = await changeSubscriptionPlan(activeSub.id, config.proPlanId);
+    console.debug(`[Billing Route] Transitioning subscription ${activeSub.id} to ${targetPlanName} Plan: ${targetPlanId}`);
+    const transitionRes = await changeSubscriptionPlan(activeSub.id, targetPlanId);
 
     // Update local DB & session cache
-    await updateLocalUserPlan(user.id, 'pro', req);
-    console.log(`[Billing Route] Upgraded local user ID ${user.id} to Pro.`);
+    await updateLocalUserPlan(user.id, targetPlanName, req);
+    console.log(`[Billing Route] Upgraded local user ID ${user.id} to ${targetPlanName}.`);
 
     return res.json({
       success: true,
-      message: 'Subscription upgraded to Pro successfully.',
+      message: `Subscription upgraded to ${targetPlanName} successfully.`,
       subscription: {
         id: transitionRes.id || activeSub.id,
-        planId: config.proPlanId,
+        planId: targetPlanId,
         status: 'active'
       }
     });

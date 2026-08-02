@@ -106,7 +106,7 @@ router.post('/', async (req, res) => {
   try {
     // 2. Entitlement checking
     console.debug(`[Text Route] Performing quota check for customer: ${user.external_customer_id}`);
-    const quotaCheck = await checkUsageQuota(user.external_customer_id, text.length);
+    const quotaCheck = await checkUsageQuota(user.external_customer_id, text.length, operation);
     
     if (!quotaCheck.allowed) {
       updateRouteMetrics(operation, false, 0, 'quota_exceeded');

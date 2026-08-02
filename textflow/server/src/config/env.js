@@ -46,7 +46,10 @@ export const config = {
   // Flexprice seeded entities (populated later)
   freePlanId: process.env.FREE_PLAN_ID,
   proPlanId: process.env.PRO_PLAN_ID,
-  charFeatureId: process.env.CHAR_FEATURE_ID,
-  toneFeatureId: process.env.TONE_FEATURE_ID,
-  charMeterId: process.env.CHAR_METER_ID
+  paygPlanId: process.env.PAYG_PLAN_ID,
+  charSummarizedFeatureId: process.env.CHAR_SUMMARIZED_FEATURE_ID,
+  charRewrittenFeatureId: process.env.CHAR_REWRITTEN_FEATURE_ID,
+  charSummarizedMeterId: process.env.CHAR_SUMMARIZED_METER_ID,
+  charRewrittenMeterId: process.env.CHAR_REWRITTEN_METER_ID,
+  toneFeatureId: process.env.TONE_FEATURE_ID
 };

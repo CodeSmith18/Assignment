@@ -40,7 +40,10 @@ export default function Dashboard() {
       const res = await usageAPI.getUsage(limit, offset);
       if (res.success) {
         setUsageData({
-          charactersProcessed: res.usage.charactersProcessed
+          charactersProcessed: res.usage.charactersProcessed,
+          charactersSummarized: res.usage.charactersSummarized,
+          charactersRewritten: res.usage.charactersRewritten,
+          accumulatedCost: res.usage.accumulatedCost
         });
         setCurrentPlan(res.plan.name);
         setHistory(res.history || []);
@@ -102,7 +105,10 @@ export default function Dashboard() {
         // Live update usage stats from response
         if (res.usage) {
           setUsageData({
-            charactersProcessed: res.usage.charactersProcessed
+            charactersProcessed: res.usage.charactersProcessed,
+            charactersSummarized: res.usage.charactersSummarized,
+            charactersRewritten: res.usage.charactersRewritten,
+            accumulatedCost: res.usage.accumulatedCost
           });
         }
         
@@ -121,7 +127,10 @@ export default function Dashboard() {
           }
           if (res.usage) {
             setUsageData({
-              charactersProcessed: res.usage.charactersProcessed
+              charactersProcessed: res.usage.charactersProcessed,
+              charactersSummarized: res.usage.charactersSummarized,
+              charactersRewritten: res.usage.charactersRewritten,
+              accumulatedCost: res.usage.accumulatedCost
             });
           }
         } else {
@@ -168,11 +177,11 @@ export default function Dashboard() {
         
         <div className="user-profile">
           <span className="user-name">Welcome, <strong>{user?.name || 'User'}</strong></span>
-          <span className={`plan-badge ${isPro ? 'pro' : 'free'}`}>
-            {isPro ? 'PRO SUBSCRIPTION' : 'FREE ACCOUNT'}
+          <span className={`plan-badge ${currentPlan.toLowerCase()}`}>
+            {currentPlan === 'payg' ? 'PAY-AS-YOU-GO' : currentPlan === 'pro' ? 'PRO SUBSCRIPTION' : 'FREE ACCOUNT'}
           </span>
           <button className="upgrade-btn-header" onClick={() => setIsUpgradeModalOpen(true)}>
-            {isPro ? 'Manage Plan' : 'Upgrade to Pro'}
+            {currentPlan !== 'free' ? 'Manage Plan' : 'Upgrade Plan'}
           </button>
           <button className="logout-btn" onClick={handleLogout}>Log Out</button>
         </div>
@@ -228,10 +237,10 @@ export default function Dashboard() {
             {/* Tone Selector Component (Only evaluated for Rewrite operations) */}
             {operation === 'rewrite' && (
               <div className="form-group">
-                <ToneSelector
+                 <ToneSelector
                   selectedTone={tone}
                   onToneSelect={setTone}
-                  isPro={isPro}
+                  isPro={currentPlan !== 'free'}
                   onUpgradePrompt={() => setIsUpgradeModalOpen(true)}
                 />
               </div>
@@ -307,6 +316,7 @@ export default function Dashboard() {
           {/* Usage Stats Visualizer card */}
           <UsageBar 
             usageData={usageData} 
+            currentPlan={currentPlan}
             onUpgradeClick={() => setIsUpgradeModalOpen(true)} 
           />
         </div>
