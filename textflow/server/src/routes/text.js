@@ -173,7 +173,7 @@ router.post('/', async (req, res) => {
         event_name: 'text_processed',
         external_customer_id: user.external_customer_id,
         properties: {
-          char_count: text.length.toString(),
+          char_count: text.length,
           operation_type: operation,
           tone: operation === 'rewrite' ? cleanTone : 'default'
         }

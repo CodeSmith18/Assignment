@@ -1,6 +1,6 @@
 Customer,Profile,Total Chars,Model A Price ($),Model B Price ($),Cheaper Model
-sim_light_1,light,4734,11.50,12.79,Model A
-sim_medium_1,medium,33763,26.00,28.13,Model A
-sim_heavy_1,heavy,168822,93.50,68.65,Model B
-sim_heavy_2,heavy,157742,88.00,65.32,Model B
-sim_medium_2,medium,33102,26.00,27.93,Model A
+sim_light_1,light,4185,11.50,12.35,Model A
+sim_medium_1,medium,28805,23.50,26.40,Model A
+sim_heavy_1,heavy,149201,84.00,62.76,Model B
+sim_heavy_2,heavy,149954,84.00,62.99,Model B
+sim_medium_2,medium,34384,26.50,28.32,Model A

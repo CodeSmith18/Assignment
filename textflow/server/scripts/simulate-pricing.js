@@ -186,7 +186,7 @@ async function runSimulation() {
           event_name: 'text_processed',
           external_customer_id: profile.externalId,
           properties: {
-            char_count: chars.toString(),
+            char_count: chars,
             operation_type: Math.random() > 0.5 ? 'summarize' : 'rewrite',
             tone: 'default'
           },
